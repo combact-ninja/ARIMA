@@ -1,0 +1,66 @@
+import numpy as np
+import pandas as pd
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.preprocessing import MinMaxScaler
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Bidirectional
+import matplotlib.pyplot as plt
+
+# Example time series data
+data = pd.Series([10, 20, 30, 40, 50, 60, 70, 80, 90, 100])
+
+# Fit ARIMA model
+model = ARIMA(data, order=(1, 1, 1))
+arima_results = model.fit()
+arima_pred = arima_results.predict(start=0, end=len(data) + 3)
+
+# Calculate residuals
+residuals = data - arima_pred[:-3]
+
+# Reshape data for BiLSTM
+residuals = np.array(residuals).reshape(-1, 1)
+
+# Scale data
+scaler = MinMaxScaler(feature_range=(0, 1))
+residuals_scaled = scaler.fit_transform(residuals)
+
+# Prepare data for BiLSTM
+def prepare_data(data, n_steps):
+    X, y = [], []
+    for i in range(len(data)):
+        end_ix = i + n_steps
+        if end_ix > len(data)-1:
+            break
+        seq_x, seq_y = data[i:end_ix], data[end_ix]
+        X.append(seq_x)
+        y.append(seq_y)
+    return np.array(X), np.array(y)
+
+n_steps = 3
+X, y = prepare_data(residuals_scaled, n_steps)
+
+# Reshape data for BiLSTM
+X = X.reshape((X.shape[0], X.shape[1], 1))
+
+# Define BiLSTM model
+model = Sequential()
+model.add(Bidirectional(LSTM(50, activation='relu'), input_shape=(n_steps, 1)))
+model.add(Dense(1))
+model.compile(optimizer='adam', loss='mse')
+
+# Fit BiLSTM model
+model.fit(X, y, epochs=200, verbose=0)
+
+# Make predictions with ARIMA and BiLSTM
+arima_bilstm_pred = []
+for i in range(len(data), len(data) + 3):
+    input_data = np.array(residuals_scaled[i-3:i]).reshape((1, n_steps, 1))
+    arima_pred = arima_results.forecast(steps=1)[0]
+    bilstm_pred = model.predict(input_data, verbose=0)
+    arima_bilstm_pred.append(arima_pred + scaler.inverse_transform(bilstm_pred)[0][0])
+
+# Plot results
+plt.plot(data, label='Actual')
+plt.plot(np.arange(len(data), len(data) + 3), arima_bilstm_pred, label='ARIMA-BiLSTM Prediction')
+plt.legend()
+plt.show()
