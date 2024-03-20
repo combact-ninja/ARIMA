@@ -1,0 +1,43 @@
+import numpy as np
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Bidirectional, LSTM, Dense
+from sklearn.model_selection import train_test_split
+
+# Assume data is distributed across different nodes
+# Each node performs reservoir sampling to get a representative sample
+def reservoir_sampling(data, k):
+    sample = []
+    for i, point in enumerate(data):
+        if i < k:
+            sample.append(point)
+        else:
+            j = np.random.randint(0, i + 1)
+            if j < k:
+                sample[j] = point
+    return sample
+
+# Generate some example data
+num_samples = 1000
+data = np.random.randn(num_samples, 10)
+labels = np.random.randn(num_samples,)
+
+# Perform reservoir sampling on each node
+sample_size = 100
+sampled_data = reservoir_sampling(data, sample_size)
+sampled_labels = reservoir_sampling(labels, sample_size)
+
+# Split data into training and test sets
+X_train, X_test, y_train, y_test = train_test_split(sampled_data, sampled_labels, test_size=0.2, random_state=42)
+
+# Define BiLSTM model for regression
+model = Sequential()
+model.add(Bidirectional(LSTM(64), input_shape=(X_train.shape[1], X_train.shape[2])))
+model.add(Dense(1))
+model.compile(loss='mean_squared_error', optimizer='adam')
+
+# Train the model
+model.fit(X_train, y_train, epochs=10, batch_size=32, validation_data=(X_test, y_test))
+
+# Evaluate the model
+loss = model.evaluate(X_test, y_test)
+print(f"Test Loss: {loss}")
